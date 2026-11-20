@@ -41,12 +41,15 @@ docker compose up --build
 # open http://localhost:8000/docs
 ```
 
-The compose build pre-downloads the SmolVLM weights into the image
-(`PRELOAD_MODEL=true`), so the container runs fully offline at runtime. If
-huggingface.co is unreachable, set the `HF_ENDPOINT` build arg in
-`docker-compose.yml` to a mirror. To skip the baked-in model, set
-`PRELOAD_MODEL=false` — weights are then downloaded on first start into the
-`models` volume.
+By default the image is built **without model weights** and the service runs
+the deterministic heuristic/CV backend, so `docker compose up --build` works
+fully offline and every endpoint — including `/v1/alert-blink` — is
+demonstrable from `/docs` with no download. To use the locally loaded
+SmolVLM model instead, set `PRELOAD_MODEL: "true"` in `docker-compose.yml`
+and `VLM_BACKEND: auto` (the build then pre-downloads the weights into the
+image; if huggingface.co is unreachable, set the `HF_ENDPOINT` build arg to
+a mirror). With `PRELOAD_MODEL=false` and `VLM_BACKEND=auto`, weights are
+downloaded on first start into the `models` volume.
 
 ## Quick start (local, no Docker)
 
@@ -57,6 +60,9 @@ pip install -r requirements.txt -r requirements-dev.txt
 
 # generate a demo screenshot + logs
 python scripts/make_sample.py --out samples
+
+# generate alert-lamp blink/steady demo snapshots (no model needed)
+python scripts/make_blink_sample.py --out samples/blink_demo
 
 # run (heuristic backend — no model download needed)
 VLM_BACKEND=heuristic uvicorn app.main:app --port 8000
@@ -78,7 +84,82 @@ MODEL_CACHE_DIR=.cache/models VLM_BACKEND=auto uvicorn app.main:app --port 8000
 | GET    | `/v1/model/info` | active vision backend + settings                    |
 | POST   | `/v1/diagnose`   | multipart: `screenshot` (file), `question`, `logs`  |
 | POST   | `/v1/diagnose/json` | JSON: `screenshot_base64`, `question`, `logs`    |
+| POST   | `/v1/alert-blink` | multipart: 3–12 lamp snapshots + sampling windows  |
 | GET    | `/docs`          | Swagger UI (try the endpoints interactively)        |
+
+### `/v1/alert-blink` — is the alert lamp steady or blinking?
+
+Several snapshots of the same lamp box show it lit. This endpoint tells
+whether the lamp is always on, always off, or blinking on a fixed period —
+and, critically, returns **every** period compatible with the evidence so a
+handful of lucky lit-only shots cannot be mistaken for steady light.
+
+**Inputs** (multipart form):
+
+* `frames` — 3 to 12 same-size PNG files, each side at most 512 px, showing
+  the same lamp box;
+* `lamp_box` — JSON `[x, y, width, height]` of the lamp box in pixels;
+* `sample_windows_ms` — JSON list of closed sampling intervals
+  `[[t_start, t_end], ...]`, one pair per frame, integer milliseconds
+  (each frame may have been exposed at any time in its own interval);
+* `period_min_ms`, `period_max_ms` — candidate period range; both even,
+  within 200–4000 ms.
+
+**Per-frame rule** (red pixels inside the box, same redness test as the CV
+region detector): red fraction `>= 0.60` → `lit`, `<= 0.10` → `off`,
+anything in between → `unclear`. Unclear frames are reported but do not
+constrain the search.
+
+**Blink model**: for period `T` the lamp is lit for `T/2` ms and off for
+`T/2` ms; a switch instant belongs to the new state. One period is feasible
+only if a **single integer-ms phase** explains every clear frame at once,
+each frame picking its own sample time inside its interval. All even
+periods in the requested range are checked exhaustively via integer
+arc-intersection on the phase circle (no sampling, no approximation).
+
+```bash
+python scripts/make_blink_sample.py --out samples/blink_demo
+curl -s http://localhost:8000/v1/alert-blink \
+  -F "frames=@samples/blink_demo/blink/frame1.png" \
+  -F "frames=@samples/blink_demo/blink/frame2.png" \
+  -F "frames=@samples/blink_demo/blink/frame3.png" \
+  -F "frames=@samples/blink_demo/blink/frame4.png" \
+  -F "frames=@samples/blink_demo/blink/frame5.png" \
+  -F "frames=@samples/blink_demo/blink/frame6.png" \
+  -F 'lamp_box=[44,44,40,40]' \
+  -F 'sample_windows_ms=[[0,0],[300,300],[600,600],[450,550],[1600,1600],[2100,2100]]' \
+  -F 'period_min_ms=200' -F 'period_max_ms=2000' | jq
+```
+
+Response (abridged):
+
+```json
+{
+  "conclusion": "blink",
+  "reasons": [],
+  "lamp_box": {"x": 44, "y": 44, "width": 40, "height": 40},
+  "period_range_ms": [200, 2000],
+  "frames": [
+    {"index": 1, "state": "lit", "red_fraction": 0.78, "sample_window_ms": [0, 0]}
+  ],
+  "feasible_periods_ms": [902, 904, "...", 1000, "...", 1098],
+  "period_solutions": [
+    {"period_ms": 1000, "lit_start_phase_ms": 0, "feasible_phase_count": 50,
+     "sample_times_ms": [0, 300, 600, 450, 1600, 2100]}
+  ],
+  "always_lit": {"feasible": false, "reason": "contradicted by frame 3 (off), ..."},
+  "always_off": {"feasible": false, "reason": "..."}
+}
+```
+
+* `period_solutions[].lit_start_phase_ms` is one example phase (the smallest
+  feasible one); `feasible_phase_count` says how many integer phases work;
+  `sample_times_ms` gives a concrete valid sample time per clear frame
+  (`null` for unclear ones). Always-lit and always-off are checked as
+  separate hypotheses. `conclusion` is one of `always_lit`, `always_off`,
+  `blink`, `ambiguous` (several hypotheses survive) or
+  `no_hypothesis_fits`, with human-readable `reasons` whenever the evidence
+  is insufficient or contradictory.
 
 ### Example
 

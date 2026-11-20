@@ -35,11 +35,22 @@ class Region:
         return self.width * self.height
 
 
+def red_pixel_mask(arr: np.ndarray) -> np.ndarray:
+    """Boolean mask of red-dominant pixels (single source of truth for redness).
+
+    Used both for error-region detection and for alert-lamp state classification.
+    """
+    r = arr[..., 0].astype(np.int16)
+    g = arr[..., 1].astype(np.int16)
+    b = arr[..., 2].astype(np.int16)
+    return (r > 140) & (g < 130) & (r - g > 60) & (r - b > 60)
+
+
 def _masks(arr: np.ndarray) -> dict[str, np.ndarray]:
     r = arr[..., 0].astype(np.int16)
     g = arr[..., 1].astype(np.int16)
     b = arr[..., 2].astype(np.int16)
-    red = (r > 140) & (g < 130) & (r - g > 60) & (r - b > 60)
+    red = red_pixel_mask(arr)
     amber = (r > 200) & (g >= 120) & (g <= 200) & (b < 80) & (r - b > 120)
     return {"red_alert": red, "amber_warning": amber}
 

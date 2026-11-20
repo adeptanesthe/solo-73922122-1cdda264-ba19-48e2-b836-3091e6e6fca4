@@ -3,16 +3,21 @@ services:
     build:
       context: .
       args:
-        # Bake SmolVLM weights into the image (fully offline at runtime).
-        # Set to "false" to download at first startup into the models volume instead.
-        PRELOAD_MODEL: "true"
+        # Default: no model weights are baked in or downloaded, so the stack
+        # builds and runs fully offline and /docs works out of the box with the
+        # deterministic heuristic/CV backend (including /v1/alert-blink, which
+        # never needs a model). Set PRELOAD_MODEL="true" (and VLM_BACKEND=auto
+        # below) to bake SmolVLM weights into the image instead.
+        PRELOAD_MODEL: "false"
         # Uncomment if huggingface.co is unreachable and a mirror is needed:
         # HF_ENDPOINT: "https://hf-mirror.com"
     image: troubleshoot-evidence-api:latest
     ports:
       - "8000:8000"
     environment:
-      VLM_BACKEND: auto            # auto | smolvlm | heuristic
+      # heuristic = no weights, fully offline; switch to auto/smolvlm after
+      # enabling PRELOAD_MODEL to use the locally loaded vision-language model
+      VLM_BACKEND: heuristic     # auto | smolvlm | heuristic
       VLM_MODEL_ID: HuggingFaceTB/SmolVLM-256M-Instruct
       MODEL_CACHE_DIR: /models
       VLM_LOCAL_FILES_ONLY: "true" # never hit the network at runtime

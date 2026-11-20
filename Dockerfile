@@ -33,7 +33,7 @@ USER appuser
 VOLUME ["/models"]
 
 EXPOSE 8000
-HEALTHCHECK --interval=30s --timeout=5s --start-period=300s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
     CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)" || exit 1
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,48 @@
+{
+  "lamp_box": [
+    44,
+    44,
+    40,
+    40
+  ],
+  "period_ms": 1000,
+  "phase_ms": 0,
+  "frames": [
+    {
+      "file": "frame1.png",
+      "t_start_ms": 0,
+      "t_end_ms": 0,
+      "observed": "lit"
+    },
+    {
+      "file": "frame2.png",
+      "t_start_ms": 300,
+      "t_end_ms": 300,
+      "observed": "lit"
+    },
+    {
+      "file": "frame3.png",
+      "t_start_ms": 600,
+      "t_end_ms": 600,
+      "observed": "off"
+    },
+    {
+      "file": "frame4.png",
+      "t_start_ms": 450,
+      "t_end_ms": 550,
+      "observed": "lit"
+    },
+    {
+      "file": "frame5.png",
+      "t_start_ms": 1600,
+      "t_end_ms": 1600,
+      "observed": "off"
+    },
+    {
+      "file": "frame6.png",
+      "t_start_ms": 2100,
+      "t_end_ms": 2100,
+      "observed": "lit"
+    }
+  ]
+}
